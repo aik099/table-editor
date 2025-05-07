@@ -32,6 +32,10 @@
             <button id="btn-import-data">Import from Markup</button>
 
             <button id="btn-reset-import-data">Reset</button>
+
+			<div style="float: right; margin-right: 10px;">
+				<button id="btn-import-sample-data">Import Sample</button>
+			</div>
         </td>
         <td>
             <button id="btn-export-data">Export to Clipboard</button>
@@ -92,6 +96,21 @@
 			$source_data.val('');
 			$target_data.val('');
 			$table_editor.setSheetData([]);
+		});
+
+		$("#btn-import-sample-data").click(function () {
+			let $sample_data = '+------------------------+----------+----------+----------+\n' +
+				'| Header row, column 1   | Header 2 | Header 3 | Header 4 |\n' +
+				'| (header rows optional) |          |          |          |\n' +
+				'+========================+==========+==========+==========+\n' +
+				'| body row 1,            | column 2 | column 3 | column 4 |\n' +
+				'| column 1               |          |          |          |\n' +
+				'+------------------------+----------+----------+----------+\n' +
+				'| body row 2             | ...      | ...      |          |\n' +
+				'+------------------------+----------+----------+----------+';
+			$source_data.val($sample_data);
+
+			$("#btn-import-data").click();
 		});
 
 		$("#btn-export-data").click(function () {
