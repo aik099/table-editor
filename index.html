@@ -1,0 +1,332 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Table Editor</title>
+
+    <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
+    <link href="https://unpkg.com/tabulator-tables/dist/css/tabulator.min.css" rel="stylesheet">
+    <script type="text/javascript" src="https://unpkg.com/tabulator-tables/dist/js/tabulator.min.js"></script>
+
+    <style type="text/css">
+        .tabulator-cell, .textarea-editor {
+            font-family: monospace;
+            font-size: 13px;
+        }
+
+        .markup-table {
+            width: 100%;
+        }
+
+        .markup-table th, .markup-table td {
+            padding: 5px;
+        }
+
+        .markup-table th {
+            width: 50%;
+        }
+
+        .data-textarea {
+            width: 100%;
+            height: 200px;
+        }
+    </style>
+</head>
+<body>
+
+<table class="markup-table">
+    <tr>
+        <th><label for="source-data">Importable RST Table</label></th>
+        <th><label for="target-data">Exported RST Table</label></th>
+    </tr>
+    <tr>
+        <td>
+            <textarea id="source-data" class="data-textarea"></textarea>
+        </td>
+        <td>
+            <textarea id="target-data" class="data-textarea" readonly></textarea>
+        </td>
+    </tr>
+    <tr>
+        <td>
+            <button id="btn-import-data">Import</button>
+
+            <button id="btn-reset-import-data">Reset</button>
+        </td>
+        <td>
+            <button id="btn-export-data">Export</button>
+        </td>
+    </tr>
+</table>
+
+<h2 style="text-align: center;">Editor</h2>
+
+<div id="example-table"></div>
+
+<script type="text/javascript">
+	function RstTableParser() {
+
+	}
+
+	RstTableParser.prototype.getColumnMatchRegExp = function (line) {
+		let columnWidths = line.substring(1, line.length - 1).split('+').map(cell => '\\|(.{' + cell.length + '})');
+
+		return new RegExp('^' + columnWidths.join('') + '\\|$');
+	};
+
+	RstTableParser.prototype.blockTrim = function ($row) {
+		let $ret = [];
+
+		$.each($row, function ($index, $cell) {
+			let $lines, $offset;
+
+			$cell = $cell.trimEnd();
+
+			if ( !$cell ) {
+				$ret.push($cell);
+
+				return;
+			}
+
+			$lines = $cell.split('\n');
+			$offset = $lines[0].length - $lines[0].trimStart().length;
+
+			if ( $offset === 0 ) {
+				$ret.push($cell);
+
+				return;
+			}
+
+			$ret.push(
+				$lines.map($line => $line.substring($offset)).join('\n')
+			);
+		});
+
+		return $ret;
+	};
+
+	RstTableParser.prototype.parse = function ($text) {
+		let $ret = [],
+			$lines = $text.trim().split('\n'),
+			$current_row = [],
+			$column_match_regexp = this.getColumnMatchRegExp($lines[0]);
+
+		for ( let i = 0; i < $lines.length; i++ ) {
+			let $line = $lines[i].trim();
+
+			// Next row line, e.g. "+----+----+....+" or "+====+====+....+".
+			if ( $line.startsWith('+') ) {
+				if ( $current_row.length ) {
+					$ret.push(this.blockTrim($current_row));
+					$current_row = [];
+				}
+
+				continue;
+			}
+
+			let $cells = $line.match($column_match_regexp);
+			$cells.shift(); // Remove the full match index.
+			$cells = $cells.map($cell => $cell.trimEnd()); // Remove trailing whitespaces.
+
+			if ( $current_row.length === 0 ) {
+				$current_row = $cells;
+			}
+			else {
+				$.each($cells, function ($index, $cell) {
+					$current_row[$index] += '\n' + $cell;
+				});
+			}
+		}
+
+		return $ret;
+	};
+
+	function RstTableGenerator() {
+		this.padding = ' ';
+	}
+
+	RstTableGenerator.prototype.generate = function ($table_data) {
+		let $me = this,
+			$ret = '',
+			$column_widths,
+			$row_separator,
+			$header_row_separator,
+			$header_row;
+
+		$table_data = this.splitByLines($table_data);
+		$column_widths = this.detectColumnWidths($table_data);
+		$row_separator = this.generateRowSeparator($column_widths, '-');
+		$header_row_separator = this.generateRowSeparator($column_widths, '=');
+		$header_row = $table_data.shift();
+
+		// Build the header.
+		$ret += $row_separator;
+		$ret += this.generateRow($header_row, $column_widths, $header_row_separator);
+
+		// Build the other rows.
+		$.each($table_data, function ($row_index, $row) {
+			$ret += $me.generateRow($row, $column_widths, $row_separator);
+		});
+
+		return $ret;
+	};
+
+	RstTableGenerator.prototype.splitByLines = function ($table_data) {
+		let $ret = [];
+
+		$.each($table_data, function ($row_index, $row) {
+			$.each($row, function ($cell_index, $cell) {
+				$row[$cell_index] = $cell.split('\n');
+			});
+
+			$ret.push($row);
+		});
+
+		return $ret;
+	};
+
+	RstTableGenerator.prototype.detectColumnWidths = function ($table_data) {
+		let $me = this,
+			$ret = [];
+
+		$.each($table_data[0], function ($cell_index, $cell) {
+			$ret.push(0);
+		});
+
+		$.each($table_data, function ($row_index, $row) {
+			$.each($row, function ($cell_index, $cell_lines) {
+				let $padded_cell_width = $me.getMaxLineLength($cell_lines) + $me.padding.length * 2;
+
+				if ( $padded_cell_width > $ret[$cell_index] ) {
+					$ret[$cell_index] = $padded_cell_width;
+				}
+			});
+		});
+
+		return $ret;
+	};
+
+	RstTableGenerator.prototype.generateRowSeparator = function ($column_widths, $filler) {
+		let $me = this,
+			$ret = '';
+
+		$.each($column_widths, function ($column_index, $width) {
+			$ret += '+' + ''.padEnd($width, $filler);
+		});
+
+		$ret += '+\n';
+
+		return $ret;
+	};
+
+	RstTableGenerator.prototype.generateRow = function ($row, $column_widths, $separator) {
+		const $max_cell_height = this.getMaxCellHeight($row);
+
+		let $ret = '',
+			$cell_value = '';
+
+		for ( let $row_index = 0; $row_index < $max_cell_height; $row_index++ ) {
+			for ( let $cell_index = 0; $cell_index < $row.length; $cell_index++ ) {
+				$cell_value = $row[$cell_index][$row_index] || '';
+				$cell_value = this.padding + $cell_value + this.padding;
+				$cell_value = $cell_value.padEnd($column_widths[$cell_index]);
+
+				$ret += '|' + $cell_value;
+			}
+
+			$ret += '|\n';
+		}
+
+		return $ret + $separator;
+	};
+
+	RstTableGenerator.prototype.getMaxCellHeight = function ($splitted_row) {
+		let $ret = 0;
+
+		$.each($splitted_row, function ($cell_index, $cell_lines) {
+			let $cell_height = $cell_lines.length;
+
+			if ( $cell_height > $ret ) {
+				$ret = $cell_height;
+			}
+		});
+
+		return $ret;
+	};
+
+	RstTableGenerator.prototype.getMaxLineLength = function ($lines) {
+		let $ret = 0;
+
+		$.each($lines, function ($line_index, $line) {
+			if ( $line.length > $ret ) {
+				$ret = $line.length;
+			}
+		});
+
+		return $ret;
+	};
+
+	let $table_editor = new Tabulator("#example-table", {
+		spreadsheet: true,
+		spreadsheetData: [],
+		editorEmptyValue: undefined,
+		rowHeader: {field: "_id", headerSort: false},
+
+		// frozenRows: 1, // doesn't work on spreadsheets
+		resizableRows: true,
+		movableRows: true,
+		movableColumns: true,
+
+		spreadsheetColumnDefinition: {
+			formatter: "textarea",
+			editor: "textarea",
+			editorParams: {
+				verticalNavigation: "editor",
+				shiftEnterSubmit: true,
+				elementAttributes: {
+					class: "textarea-editor",
+				},
+			},
+		},
+	});
+
+	$(document).ready(function () {
+		let $source_data = $("#source-data"),
+			$target_data = $("#target-data"),
+			$rst_table_parser = new RstTableParser();
+
+		$source_data.val('');
+		$target_data.val('');
+
+		$target_data.on('focus', function () {
+			$target_data.select();
+		});
+
+		$("#btn-import-data").click(function () {
+			let $table_data = $rst_table_parser.parse(
+				$source_data.val()
+			);
+
+			$table_editor.setSheetData($table_data);
+		});
+
+		$("#btn-reset-import-data").click(function () {
+			$source_data.val('');
+			$target_data.val('');
+			$table_editor.setSheetData([]);
+		});
+
+		$("#btn-export-data").click(function () {
+			let $rst_table_generator = new RstTableGenerator(),
+				$rst_markup = $rst_table_generator.generate($table_editor.getSheetData());
+
+			$target_data.val($rst_markup);
+		});
+	});
+</script>
+
+<br/>
+Inspired by the <a href="https://www.tablesgenerator.com/">https://www.tablesgenerator.com/</a> and <a href="https://tableconvert.com/">https://tableconvert.com/</a>.
+
+</body>
+</html>
