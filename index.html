@@ -29,12 +29,12 @@
     </tr>
     <tr>
         <td>
-            <button id="btn-import-data">Import</button>
+            <button id="btn-import-data">Import from Markup</button>
 
             <button id="btn-reset-import-data">Reset</button>
         </td>
         <td>
-            <button id="btn-export-data">Export</button>
+            <button id="btn-export-data">Export to Clipboard</button>
         </td>
     </tr>
 </table>
@@ -99,6 +99,9 @@
 				$rst_markup = $rst_table_generator.generate($table_editor.getSheetData());
 
 			$target_data.val($rst_markup);
+
+			$target_data.select();
+			navigator.clipboard.writeText($target_data.val());
 		});
 	});
 </script>
