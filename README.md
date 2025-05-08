@@ -1,4 +1,4 @@
-# Table Editor
+# Markup Table Editor
 
 Browser-based editor for creating, editing, and converting reStructuredText (RST) tables with ease.
 
