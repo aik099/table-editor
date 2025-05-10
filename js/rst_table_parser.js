@@ -59,6 +59,11 @@ RstTableParser.prototype.parse = function ($text) {
 		}
 
 		let $cells = $line.match($column_match_regexp);
+
+		if ( $cells === null ) {
+			throw new Error('The "' + $line + '" line format is incorrect.');
+		}
+
 		$cells.shift(); // Remove the full match index.
 		$cells = $cells.map($cell => $cell.trimEnd()); // Remove trailing whitespaces.
 
